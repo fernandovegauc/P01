@@ -44,17 +44,17 @@ osFile* os_open(char* path, char mode);
 
 // Lee nbytes de osFIle y los guarda en buffer.
 // Sigue la estructura de bloques del disco.
-int os_read(osFile* file_desc, void* buffer, int nbytes);
+int os_read(osFile* file, void* buffer, int nbytes);
 
 // Escribe nbytes del buffer en el archivo.
-int os_write(osFile* file_desc, void* buffer, int nbytes);
+int os_write(osFile* file, void* buffer, int nbytes);
 
 // Cierra el archivo y escribe de forma permanente los cambios.
-int os_close(osFile* file_desc);
+void os_close(osFile* file);
 
 // Elimina la referencia al archivo. Si es la unica referencia elimina 
 // el archivo.
-int os_rm(char* path);
+void os_rm(char* path);
 
 // Crea una nueva referenecia (hardlink) al archivo dest.
 int os_hardlink(char* orig, char* dest);
