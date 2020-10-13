@@ -1,17 +1,18 @@
 typedef struct osFile {
-    unsigned int index_block;
+    unsigned int base_index_block; // Numero de block del index block principal
+    unsigned int index_block; // Numero de block del index block actual
     int n_index_block; // El numero de index block en que esta el cursor (0 el principal)
-    unsigned int dir_blocks[512]; // El ultimo apunta al siguiente index block
-    int n_dir_block; // El numero de dir block en que está el cursor
+    unsigned int direc_blocks[512]; // El ultimo apunta al siguiente index block, para 
+                                    // index=0 los primeros 2 tienen otra info
+    int n_direc_block; // El numero de dir block en que está el cursor (parte en 2)
     unsigned int data_blocks[512]; 
     int n_data_block; // El numero de data block en que está el cursor
 
     unsigned int virtual_cursor; // Cursor respecto al inicio del archivo
     unsigned int relative_cursor; // Cursor respecto al data block (0:2047)
 
-    unsigned int size;
+    unsigned long long size;
     char mode;
-    char name[29];
 } osFile;
 
 // Variable global definida en os_API.c 
