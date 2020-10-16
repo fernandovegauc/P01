@@ -31,6 +31,9 @@ void INC_cursor(osFile* file);
 // data block de ese direc block.
 void first_write(osFile* file);
 
+// Libera la memoria de file
+void file_destroy(osFile* file);
+
 
 // Declaración de funciones internas de la API
 
@@ -108,6 +111,9 @@ unsigned int get_free_block();
 // Pasa num a big endian y lo guarda en buffer de bytes bytes.
 void to_big_endian(unsigned char* buffer, unsigned long long num, int bytes);
 
+// Pasa buffer en big endian a little endian y retorna el numero.
+unsigned long long to_little_endian(unsigned char* buffer, int bytes);
+
 // Acutaliza el bitmap del block con el valor value (1 o 0)
 void update_bitmap(unsigned int block, int value);
 
@@ -152,78 +158,79 @@ void os_bitmap(unsigned short num, short hex){
 
 void os_ls(char* path){
     unsigned int block = get_block(path);
+    printf("Listando: %s\n", path);
     list_dir(block);
 }
 
-// osFile* os_open(char* path, char mode){
-//     // Revisar si es valido hasta el penultimo nivel
-//     // if (mode != 'r' && mode != 'w') {printf("Modo debe ser r o w\n"); return NULL;}
-//     // int isdir = is_dir(path);
-//     // if (isdir == -1 && mode == 'r') {printf("Archivo no existe\n"); return NULL;}
-//     // if (isdir == 0 && mode == 'w') {printf("Archivo ya existe\n"); return NULL;}
-//     // if (isdir == 1) {printf("Path no es un archivo\n"); return NULL;}
+osFile* os_open(char* path, char mode){
+    // Revisar si es valido hasta el penultimo nivel
+    // if (mode != 'r' && mode != 'w') {printf("Modo debe ser r o w\n"); return NULL;}
+    // int isdir = is_dir(path);
+    // if (isdir == -1 && mode == 'r') {printf("Archivo no existe\n"); return NULL;}
+    // if (isdir == 0 && mode == 'w') {printf("Archivo ya existe\n"); return NULL;}
+    // if (isdir == 1) {printf("Path no es un archivo\n"); return NULL;}
     
-//     if (mode == 'w') create_file(path);
-//     osFile* file = osFile_init(path, mode);
-//     return file;
-// }
+    if (mode == 'w') create_file(path);
+    osFile* file = osFile_init(path, mode);
+    return file;
+}
 
-// int os_read(osFile* file, void* buffer, int nbytes){
-//     if (file->mode != 'r') return 0;
-//     if (nbytes == 0) return 0;
-//     if (file->size - file->virtual_cursor < nbytes){
-//         return os_read(file, buffer, file->size - file->virtual_cursor);
-//     }
-//     unsigned int bytes_read = 0;
-//     unsigned int buffer_cursor = 0;
-//     while (nbytes - bytes_read >= 2048)
-//     {
-//         read_bytes(file, buffer, buffer_cursor, 2048);
-//         bytes_read += 2048;
-//         buffer_cursor += 2048;
-//     }
-//     if (nbytes - bytes_read){
-//         read_bytes(file, buffer, buffer_cursor, nbytes - bytes_read);
-//         bytes_read += nbytes - bytes_read;
-//         buffer_cursor += nbytes - bytes_read;
-//     }
-//     return bytes_read;
-// }
+int os_read(osFile* file, void* buffer, int nbytes){
+    if (file->mode != 'r') return 0;
+    if (nbytes == 0) return 0;
+    if (file->size - file->virtual_cursor < nbytes){
+        return os_read(file, buffer, file->size - file->virtual_cursor);
+    }
+    unsigned int bytes_read = 0;
+    unsigned int buffer_cursor = 0;
+    while (nbytes - bytes_read >= 2048)
+    {
+        read_bytes(file, buffer, buffer_cursor, 2048);
+        bytes_read += 2048;
+        buffer_cursor += 2048;
+    }
+    if (nbytes - bytes_read){
+        read_bytes(file, buffer, buffer_cursor, nbytes - bytes_read);
+        bytes_read += nbytes - bytes_read;
+        buffer_cursor += nbytes - bytes_read;
+    }
+    return bytes_read;
+}
 
-// int os_write(osFile* file, void* buffer, int nbytes){
-//     if (file->mode != 'w') return 0;
-//     if (nbytes == 0) return 0;
-//     if (nbytes > free_space() + 2048 - file->relative_cursor) {
-//         return os_write(file, buffer, free_space() + 2048 - file->relative_cursor);
-//     }
-//     unsigned int bytes_written = 0;
-//     unsigned int buffer_cursor = 0;
-//     while (nbytes - bytes_written >= 2048)
-//     {
-//         write_bytes(file, buffer, buffer_cursor, 2048);
-//         bytes_written += 2048;
-//         buffer_cursor += 2048;
-//     }
-//     if (nbytes - bytes_written){
-//         write_bytes(file, buffer, buffer_cursor, nbytes - bytes_written);
-//         bytes_written += nbytes - bytes_written;
-//         buffer_cursor += nbytes - bytes_written;
-//     }
-//     return bytes_written;
-// }
+int os_write(osFile* file, void* buffer, int nbytes){
+    if (file->mode != 'w') return 0;
+    if (nbytes == 0) return 0;
+    if (nbytes > free_space() + 2048 - file->relative_cursor) {
+        return os_write(file, buffer, free_space() + 2048 - file->relative_cursor);
+    }
+    unsigned int bytes_written = 0;
+    unsigned int buffer_cursor = 0;
+    while (nbytes - bytes_written >= 2048)
+    {
+        write_bytes(file, buffer, buffer_cursor, 2048);
+        bytes_written += 2048;
+        buffer_cursor += 2048;
+    }
+    if (nbytes - bytes_written){
+        write_bytes(file, buffer, buffer_cursor, nbytes - bytes_written);
+        bytes_written += nbytes - bytes_written;
+        buffer_cursor += nbytes - bytes_written;
+    }
+    return bytes_written;
+}
 
-// void os_close(osFile* file){
-//     if (file->mode == 'w'){
-//         write_pointers_block(file->data_blocks, file->direc_blocks[file->n_direc_block]);
-//         write_pointers_block(file->direc_blocks, file->index_block);
-//         unsigned char buffer[2048];
-//         read_block(buffer, file->base_index_block);
-//         buffer[0] = 1;
-//         to_big_endian(&buffer[1], file->size, 7);
-//         write_block(buffer, file->base_index_block);
-//     }
-//     file_destroy(file);
-// }
+void os_close(osFile* file){
+    if (file->mode == 'w'){
+        write_pointers_block(file->data_blocks, file->direc_blocks[file->n_direc_block]);
+        write_pointers_block(file->direc_blocks, file->index_block);
+        unsigned char buffer[2048];
+        read_block(buffer, file->base_index_block);
+        buffer[0] = 1;
+        to_big_endian(&buffer[1], file->size, 7);
+        write_block(buffer, file->base_index_block);
+    }
+    file_destroy(file);
+}
 
 // void os_rm(char* path){
 //     // valid path
@@ -272,107 +279,112 @@ void os_ls(char* path){
 
 // Definicion de funciones de osFile
 
-// osFile* osFile_init(char* path, char mode){
-//     osFile* file = calloc(1, sizeof(osFile));
-//     file->base_index_block = get_block(path);
-//     file->index_block = file->base_index_block;
-//     file->mode = mode;
-//     file->virtual_cursor = 0;
-//     file->relative_cursor = 0;
-//     file->n_index_block = 0;
-//     file->n_direc_block = 2;
-//     file->n_data_block = 0;
-//     if (mode == 'r') {
-//         read_pointers_block(file->direc_blocks, file->base_index_block);
-//         read_pointers_block(file->data_blocks, file->direc_blocks[2]);
-//         file->size = ((((unsigned long long) file->direc_blocks[0]) << 32) | file->direc_blocks[1]) 
-//                     & ((1 << 56) - 1);
-//     }
-//     else {
-//         file->size = 0;
-//     }
-// }
+osFile* osFile_init(char* path, char mode){
+    osFile* file = calloc(1, sizeof(osFile));
+    file->base_index_block = get_block(path);
+    file->index_block = file->base_index_block;
+    file->mode = mode;
+    file->virtual_cursor = 0;
+    file->relative_cursor = 0;
+    file->n_index_block = 0;
+    file->n_direc_block = 2;
+    file->n_data_block = 0;
+    if (mode == 'r') {
+        read_pointers_block(file->direc_blocks, file->base_index_block);
+        read_pointers_block(file->data_blocks, file->direc_blocks[2]);
+        file->size = (((unsigned long long) file->direc_blocks[0] << 32) | file->direc_blocks[1]) 
+                    & (((unsigned long long) 1 << 56) - 1);
+    }
+    else {
+        file->size = 0;
+    }
+    return file;
+}
 
-// void read_bytes(osFile* file, void* buffer, unsigned int buffer_cursor, int nbytes){
-//     if (nbytes == 0) return;
-//     if (file->relative_cursor + nbytes <= 2048){
-//         unsigned char block_buffer[2048];
-//         read_block(block_buffer, file->data_blocks[file->n_data_block]);
-//         memcpy(&buffer[buffer_cursor], &block_buffer[file->relative_cursor], nbytes);
-//         file->relative_cursor += nbytes;
-//         file->virtual_cursor += nbytes;
-//     }
-//     else
-//     {
-//         unsigned int bytes_restantes = nbytes - 2048 + file->relative_cursor;
-//         read_bytes(file, buffer, buffer_cursor, 2048 - file->relative_cursor);
-//         INC_cursor(file);
-//         read_bytes(file, buffer, buffer_cursor + nbytes - bytes_restantes, bytes_restantes);
-//     }   
-// }
+void read_bytes(osFile* file, void* buffer, unsigned int buffer_cursor, int nbytes){
+    if (nbytes == 0) return;
+    if (file->relative_cursor + nbytes <= 2048){
+        unsigned char block_buffer[2048];
+        read_block(block_buffer, file->data_blocks[file->n_data_block]);
+        memcpy((unsigned char*) buffer + buffer_cursor, &block_buffer[file->relative_cursor], nbytes);
+        file->relative_cursor += nbytes;
+        file->virtual_cursor += nbytes;
+    }
+    else
+    {
+        unsigned int bytes_restantes = nbytes - 2048 + file->relative_cursor;
+        read_bytes(file, buffer, buffer_cursor, 2048 - file->relative_cursor);
+        INC_cursor(file);
+        read_bytes(file, buffer, buffer_cursor + nbytes - bytes_restantes, bytes_restantes);
+    }   
+}
 
-// void write_bytes(osFile* file, void* buffer, unsigned int buffer_cursor, int nbytes){
-//     if (nbytes == 0) return;
-//     if (file->virtual_cursor == 0 && file->direc_blocks[2] == 0) first_write(file);
-//     if (file->relative_cursor + nbytes <= 2048){
-//         unsigned char block_buffer[2048];
-//         read_block(block_buffer, file->data_blocks[file->n_data_block]);
-//         memcpy(&block_buffer[file->relative_cursor], &buffer[buffer_cursor], nbytes);
-//         write_block(block_buffer, file->data_blocks[file->n_data_block]);
-//         file->relative_cursor += nbytes;
-//         file->virtual_cursor += nbytes;
-//         file->size += nbytes;
-//     }
-//     else
-//     {
-//         unsigned int bytes_restantes = nbytes - 2048 + file->relative_cursor;
-//         write_bytes(file, buffer, buffer_cursor, 2048 - file->relative_cursor);
-//         INC_cursor(file);
-//         write_bytes(file, buffer, buffer_cursor + nbytes - bytes_restantes, bytes_restantes);
-//     }
-// }
+void write_bytes(osFile* file, void* buffer, unsigned int buffer_cursor, int nbytes){
+    if (nbytes == 0) return;
+    if (file->virtual_cursor == 0 && file->direc_blocks[2] == 0) first_write(file);
+    if (file->relative_cursor + nbytes <= 2048){
+        unsigned char block_buffer[2048];
+        read_block(block_buffer, file->data_blocks[file->n_data_block]);
+        memcpy(&block_buffer[file->relative_cursor], (unsigned char*) buffer + buffer_cursor, nbytes);
+        write_block(block_buffer, file->data_blocks[file->n_data_block]);
+        file->relative_cursor += nbytes;
+        file->virtual_cursor += nbytes;
+        file->size += nbytes;
+    }
+    else
+    {
+        unsigned int bytes_restantes = nbytes - 2048 + file->relative_cursor;
+        write_bytes(file, buffer, buffer_cursor, 2048 - file->relative_cursor);
+        INC_cursor(file);
+        write_bytes(file, buffer, buffer_cursor + nbytes - bytes_restantes, bytes_restantes);
+    }
+}
 
-// void first_write(osFile* file){
-//     file->direc_blocks[2] = get_free_block();
-//     file->data_blocks[0] = get_free_block();
-// }
+void first_write(osFile* file){
+    file->direc_blocks[2] = get_free_block();
+    file->data_blocks[0] = get_free_block();
+}
 
-// void INC_cursor(osFile* file){
-//     file->relative_cursor = 0;
-//     if (file->n_data_block < 511) {
-//         file->n_data_block ++;
-//         if (file->mode == 'w') file->data_blocks[file->n_data_block] = get_free_block();
-//     }
-//     else {
-//         if (file->mode == 'w') write_pointers_block(file->data_blocks, file->direc_blocks[file->n_direc_block]);
-//         file->n_data_block = 0;
-//         if (file->n_direc_block < 510) {
-//             file->n_direc_block ++;
-//             if (file->mode == 'w') {
-//                 file->direc_blocks[file->n_direc_block] = get_free_block();
-//                 file->data_blocks[0] = get_free_block();
-//             }
-//             else read_pointers_block(file->data_blocks, file->direc_blocks[file->n_direc_block]);            
-//         }
-//         else
-//         {
-//             file->n_direc_block = 0;
-//             if (file->mode == 'w'){
-//                 file->direc_blocks[511] = get_free_block();
-//                 write_pointers_block(file->direc_blocks, file->index_block);
-//                 file->index_block = file->direc_blocks[511];
-//                 file->direc_blocks[0] = get_free_block();
-//                 file->data_blocks[0] = get_free_block();
-//             }
-//             else {
-//                 file->index_block = file->direc_blocks[511];
-//                 read_pointers_block(file->direc_blocks, file->direc_blocks[511]);
-//                 read_pointers_block(file->data_blocks, file->direc_blocks[0]);
-//             }
-//             file->n_index_block ++;
-//         }
-//     }
-// }
+void INC_cursor(osFile* file){
+    file->relative_cursor = 0;
+    if (file->n_data_block < 511) {
+        file->n_data_block ++;
+        if (file->mode == 'w') file->data_blocks[file->n_data_block] = get_free_block();
+    }
+    else {
+        if (file->mode == 'w') write_pointers_block(file->data_blocks, file->direc_blocks[file->n_direc_block]);
+        file->n_data_block = 0;
+        if (file->n_direc_block < 510) {
+            file->n_direc_block ++;
+            if (file->mode == 'w') {
+                file->direc_blocks[file->n_direc_block] = get_free_block();
+                file->data_blocks[0] = get_free_block();
+            }
+            else read_pointers_block(file->data_blocks, file->direc_blocks[file->n_direc_block]);            
+        }
+        else
+        {
+            file->n_direc_block = 0;
+            if (file->mode == 'w'){
+                file->direc_blocks[511] = get_free_block();
+                write_pointers_block(file->direc_blocks, file->index_block);
+                file->index_block = file->direc_blocks[511];
+                file->direc_blocks[0] = get_free_block();
+                file->data_blocks[0] = get_free_block();
+            }
+            else {
+                file->index_block = file->direc_blocks[511];
+                read_pointers_block(file->direc_blocks, file->direc_blocks[511]);
+                read_pointers_block(file->data_blocks, file->direc_blocks[0]);
+            }
+            file->n_index_block ++;
+        }
+    }
+}
+
+void file_destroy(osFile* file){
+    free(file);
+}
 
 
 // Definicion de funciones internas de la API
@@ -390,6 +402,30 @@ void write_block(void* buffer, unsigned int num){
     fwrite(buffer, 2048, 1, file);
     fclose(file);
 }
+
+void read_pointers_block(unsigned int* buffer, unsigned int num){
+    unsigned char bytes_buffer[2048];
+    read_block(bytes_buffer, num);
+    for (int i = 0; i < 512; i++)
+    {
+        unsigned char buf[4];
+        memcpy(buf, &bytes_buffer[4 * i], 4);
+        unsigned int number = to_little_endian(buf, 4);
+        buffer[i] = number;
+    }
+}
+
+void write_pointers_block(unsigned int* buffer, unsigned int num){
+    unsigned char bytes_buffer[2048];
+    for (int i = 0; i < 512; i++)
+    {
+        unsigned char buf[4];
+        to_big_endian(buf, buffer[i], 4);
+        memcpy(&bytes_buffer[4 * i], buf, 4);
+    }
+    write_block(bytes_buffer, num);
+}
+
 
 void print_bits(unsigned char byte){
     unsigned char mask = 1;
@@ -447,7 +483,9 @@ unsigned int free_space(){
 
 void parse_path(char* path, char** path_array){
     char *token;
-    token = strtok(path, "/");
+    char path_cp[strlen(path) + 1];
+    strcpy(path_cp, path);
+    token = strtok(path_cp, "/");
     int i = 0;
     while (token)
     {
@@ -458,53 +496,41 @@ void parse_path(char* path, char** path_array){
     }
 }
 
-short path_length(char* path){
-    char *token;
-    short len = 0;
-    // printf("%s\n", path);
-    token = strtok(path, "/");
-    // printf("%s\n", token);
-    while (token)
-    {
-        len ++;
-        token = strtok(NULL, "/");
-    }
-    printf("%d", len);
-    return len;
-}
+
 
 void free_array(char** array, int path_len){
     for (int i = 0; i < path_len; i++) free(array[i]);
 }
 
-// void create_file(char* path){
-//     unsigned int block = get_free_block();
-//     char parent[strlen(path) + 1];
-//     get_parent(path, parent);
-//     int path_len = path_length(path);
-//     char* path_array[path_len];
-//     parse_path(path, path_array);
-//     char* name = path_array[path_len];
-//     path_length(path);
-//     create_entrance(parent, name, ARCHIVO, block);
-//     free_array(path_array, path_len);
-// }
+void create_file(char* path){
+    unsigned int block = get_free_block();
+    char parent[strlen(path) + 1];
+    get_parent(path, parent);
+    int path_len = path_length(path);
+    char* path_array[path_len];
+    parse_path(path, path_array);
+    char* name = path_array[path_len];
+    path_length(path);
+    create_entrance(parent, name, ARCHIVO, block);
+    free_array(path_array, path_len);
+}
 
-// void create_entrance(char* parent, char* name, int tipo, unsigned int block){
-// }
+void create_entrance(char* parent, char* name, int tipo, unsigned int block){
+    
+}
 
-// void get_parent(char* path, char* parent){
-//     int path_len = path_length(path);
-//     if (path_len == 1) {strcpy(parent, "/"); return NULL;}
-//     char* path_array[path_len];
-//     parse_path(path, path_array);
-//     int cur = 0;
-//     for (int i = 0; i < path_len - 1; i++)
-//     {
-//         parent[cur] = '/'; cur++;
-//         strcpy(&parent[cur], path_array[i]); cur += strlen(path_array[i]);
-//     }
-// }
+void get_parent(char* path, char* parent){
+    int path_len = path_length(path);
+    if (path_len == 1) {strcpy(parent, "/"); return;}
+    char* path_array[path_len];
+    parse_path(path, path_array);
+    int cursor = 0;
+    for (int i = 0; i < path_len - 1; i++)
+    {
+        parent[cursor] = '/'; cursor++;
+        strcpy(&parent[cursor], path_array[i]); cursor += strlen(path_array[i]);
+    }
+}
 
 unsigned int get_free_block(){
     unsigned int free_block; 
@@ -537,11 +563,19 @@ unsigned int get_free_block(){
 
 // }
 
-// void to_big_endian(unsigned char* buffer, unsigned long long num, int bytes){
-//     for (int i = 0; i < bytes; i++) {
-//         buffer[i] = (unsigned char) (num & (255 << ((bytes - i - 1) * 8))) >> ((bytes - i - 1) * 8));
-//     }
-// }
+void to_big_endian(unsigned char* buffer, unsigned long long num, int bytes){
+    for (int i = 0; i < bytes; i++) {
+        buffer[i] = (unsigned char) (num & (255 << ((bytes - i - 1) * 8))) >> ((bytes - i - 1) * 8);
+    }
+}
+
+unsigned long long to_little_endian(unsigned char* buffer, int bytes){
+    unsigned long long number = 0;
+    for (int i = 0; i < bytes; i++) {
+        number += (unsigned long long) buffer[i] << ((bytes - i - 1) * 8);
+    }
+    return number;
+}
 
 unsigned int get_block_in_dir(char* name, unsigned int bloque_dir){
     unsigned char buffer[2048];
@@ -563,29 +597,41 @@ unsigned int get_block_in_dir(char* name, unsigned int bloque_dir){
 
 unsigned int get_block(char* path){
     if (!strcmp(path, "/")) return 0;
-    // printf("%s\n", path);
     int path_len = path_length(path);
     char* path_array[path_len];
     parse_path(path, path_array);
-    // for (int i = 0; i < path_len; i++)
-    // {
-    //     printf("%s\n", path_array[i]);
-    // }
     unsigned int dir = 0;
     for (int i = 0; i < path_len; i++) dir = get_block_in_dir(path_array[i], dir); 
     free_array(path_array, path_len);
     return dir;
 }
 
+short path_length(char* path){
+    char *token;
+    char path_cp[strlen(path) + 1];
+    strcpy(path_cp, path);
+    short len = 0;
+    token = strtok(path_cp, "/");
+    while (token)
+    {
+        len ++;
+        token = strtok(NULL, "/");
+    }
+    return len;
+}
+
 void list_dir(unsigned int block){
     unsigned char buffer[2048];
     read_block(buffer, block);
+    int first = 1;
+    printf("tipo nombre\n");
     for (int i = 0; i < 64; i++)
     {
         unsigned char mask = 192;
         if (buffer[32 * i] & mask) {
-            printf("%d ", (buffer[32 * i] & mask) >> 6);
-            printf("%s\n", &buffer[32 * i + 3]);
+            if (!first) printf("\n"); else first = 0;            
+            printf("%d    ", (buffer[32 * i] & mask) >> 6);
+            printf("%s", &buffer[32 * i + 3]);
         }
     }
 }

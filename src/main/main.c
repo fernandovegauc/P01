@@ -5,11 +5,10 @@ int main(int argc, char const *argv[])
 {
     os_mount("disks/simdiskfilled.bin");
     // os_mount("disks/simdiskformat.bin");
-    os_bitmap(1, 1);
+    // os_bitmap(1, 1);
     // os_ls("/");
     // printf("\n");
-    char* folder = "/";
-    os_ls(folder);
+    os_ls("/music");
     printf("\n");
     // os_ls("/memes");
     // printf("\n");
