@@ -11,10 +11,12 @@ int main(int argc, char const *argv[])
     // print_block(0,0);
     // osFile* file = os_open("/archivo.txt", 'w');
     // os_ls("/");
-    os_unload("/archivo3.txt", "archivo4.txt");
-    // os_load("archivo3.txt");
+    // os_unload("/", "new_root");
+    // os_load("memes");
     // os_close(file);
     os_ls("/");
+    os_hardlink("generic (2).jpg", "folder1/meme1.jpg");
+    os_unload("/", "new_root");
     // os_unload("/IMPORTANT.txt", "important.txt");
     // os_unload("/memes", "memes");
     // printf("Existe /memes: %d\n", os_exists("/memes"));
