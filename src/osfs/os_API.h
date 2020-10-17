@@ -26,10 +26,10 @@ void os_mount(char* diskname);
 // Liberar la variable global
 void os_unmount();
 
-// Imprime por stderr el bloque num (1..64) del bitman. 
+// Imprime por stderr el bloque num (1..64) del bitmap. 
 // hex es un bool que indica si se imprime en hexadecimal.
 // Si num=0 se imprime todo el bitmap.
-void os_bitmap(unsigned short num, short hex);
+void os_bitmap(unsigned int num, short hex);
 
 // Retorna 1 si existe el archivo en path.
 int os_exists(char* path);
@@ -66,7 +66,7 @@ int os_mkdir(char* path);
 // Elimina un directorio vacio. Puede ser de forma recursiva si no esta vacio. 
 int os_rmdir(char* path, short recursive);
 
-// "Descarga" el archivo dest a nuestro pc.
+// "Descarga" el archivo o directorio orig a nuestro pc. (usar path relativo en dest por seguridad)
 int os_unload(char* orig, char* dest);
 
 // Cargamos un archivo o carpeta a nuestra root folder del disco.
