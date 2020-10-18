@@ -127,6 +127,9 @@ void load_to(char* orig, char* dest);
 // Retorna 1 si path es valido, 0 si no (empieza con / y termina sin / o es "/")
 int valid_path(char* path);
 
+// Retorna 1 si path es un dir vacio, 0 si no
+int empty_dir(char* path);
+
 
 /* -------- Definicion de Funciones expuestas de la API --------- */
 
@@ -163,7 +166,7 @@ void os_ls(char* path){
 osFile* os_open(char* path, char mode){
     if (!valid_path(path)) {
         fprintf(stderr, "path inválido\n");
-        return 0;
+        return NULL;
     }
     if (mode != 'r' && mode != 'w') {fprintf(stderr, "Modo debe ser r o w\n"); return NULL;}
     int isdir = is_dir(path);
@@ -253,7 +256,7 @@ int os_rm(char* path){
         write_block(buffer, index_block);
     }
     remove_entrance(path);
-    return 0;
+    return 1;
 }
 
 int os_hardlink(char* orig, char* dest){
@@ -283,7 +286,7 @@ int os_hardlink(char* orig, char* dest){
     write_block(buffer, orig_block);
     free_array(path_array, path_len);
     printf("Hardlink creado\n");
-    return 0;
+    return 1;
 }
 
 int os_mkdir(char* path){
@@ -300,6 +303,7 @@ int os_mkdir(char* path){
     parse_path(path, path_array);
     char parent[strlen(path)];
     get_parent(path, parent);
+    if (is_dir(parent) != 1) {fprintf(stderr, "Ruta invalida\n"); return 0;}
     char* name = path_array[path_len - 1];
     
     unsigned int free_block = get_free_block();
@@ -308,14 +312,6 @@ int os_mkdir(char* path){
     create_entrance(parent, name, 2, free_block);
     free_array(path_array, path_len);
     return 0;
-}
-
-int empty_dir(char* path){
-    unsigned int dir_block = get_block(path);
-    unsigned char buffer[2048];
-    read_block(buffer, dir_block);
-    for (int i = 0; i < 64; i++) if (buffer[32 * i] & 192) return 0;
-    return 1;
 }
 
 int os_rmdir(char* path, short recursive){
@@ -413,7 +409,7 @@ int os_unload(char* orig, char* dest){
         os_close(source);
     }
     else printf("Archivo o directorio no existe\n");    
-    return 0;
+    return 1;
 }
 
 int os_load(char* orig){
@@ -433,7 +429,7 @@ int os_load(char* orig){
     }
     load_to(orig, dest);
     free_array(path_array, path_len);
-    return 0;
+    return 1;
 }
 
 // Definicion de funciones de osFile
@@ -959,7 +955,12 @@ void load_to(char* orig, char* dest){
         {
             if (!fread(buffer, 4096, 1, source)) break;
             blocks_read ++;
-            os_write(file, buffer, 4096);
+            if (!os_write(file, buffer, 4096)) {
+                fprintf(stderr, "Limite de espacio alcanzado\n"); 
+                fclose(source);
+                os_close(file);
+                return;
+            }
         }
         // Una vez q no queden bloques leemos los bytes < 4096 que queden en la "cola" de source
         // Hacemos esto por performance para no tener que leer  tantos bloques de 1 byte
@@ -979,5 +980,13 @@ int valid_path(char* path){
     if (!strcmp(path, "/")) return 1;
     if (path[0] != '/') return 0;
     if (path[strlen(path) - 1] == '/') return 0;
+    return 1;
+}
+
+int empty_dir(char* path){
+    unsigned int dir_block = get_block(path);
+    unsigned char buffer[2048];
+    read_block(buffer, dir_block);
+    for (int i = 0; i < 64; i++) if (buffer[32 * i] & 192) return 0;
     return 1;
 }
