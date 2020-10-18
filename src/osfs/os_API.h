@@ -2,10 +2,10 @@ typedef struct osFile {
     unsigned int base_index_block; // Numero de block del index block principal
     unsigned int index_block; // Numero de block del index block actual
     int n_index_block; // El numero de index block en que esta el cursor (0 el principal)
-    unsigned int direc_blocks[512]; // El ultimo apunta al siguiente index block, para 
-                                    // index=0 los primeros 2 tienen otra info
+    // El ultimo apunta al siguiente index block, para index=0 los primeros 2 tienen otra info 
+    unsigned int direc_blocks[512];
     int n_direc_block; // El numero de dir block en que está el cursor (parte en 2)
-    unsigned int data_blocks[512]; 
+    unsigned int data_blocks[512]; // Apuntan a los bloques donde esta la data 
     int n_data_block; // El numero de data block en que está el cursor
 
     unsigned int virtual_cursor; // Cursor respecto al inicio del archivo
@@ -15,15 +15,15 @@ typedef struct osFile {
     char mode;
 } osFile;
 
-// Variable global definida en os_API.c 
+/* ---------- Variable global definida en os_API.c ---------- */
 extern char* DISK_NAME;
 
 
-// Funciones generales
+/* ---------- Funciones generales ---------- */
 
 // Asignar la variable global con el nombre del disco.
 void os_mount(char* diskname);
-// Liberar la variable global
+// Liberar la memoria de la variable global
 void os_unmount();
 
 // Imprime por stderr el bloque num (1..64) del bitmap. 
@@ -37,8 +37,7 @@ int os_exists(char* path);
 // Lista los elementos de la carpeta path (no recusriva).
 void os_ls(char* path);
 
-
-// Funciones de manejo de archivos.
+/* ---------- Funciones de manejo de archivos ---------- */
 
 // Retorna un nuevo osFile abriendo el archivo path.
 osFile* os_open(char* path, char mode);
@@ -57,7 +56,7 @@ void os_close(osFile* file);
 // el archivo.
 void os_rm(char* path);
 
-// Crea una nueva referenecia (hardlink) al archivo dest.
+// Crea una nueva referenecia en dest (hardlink) al archivo orig. Aumenta la cantidad de hardlinks de orig.
 int os_hardlink(char* orig, char* dest);
 
 // Crea un nuevo directorio.

@@ -6,12 +6,15 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <math.h>
+
+/* -------- Variables globales --------- */
 
 // Variable global con el nombre del disco
 char* DISK_NAME;
 
 
-// Declaración de funciones de osFile
+/* -------- Declaración de funciones de osFile --------- */
 
 // Crea una nueva instancia de osFile. 
 osFile* osFile_init(char* path, char mode);
@@ -25,7 +28,7 @@ void read_bytes(osFile* file, void* buffer, unsigned int buffer_cursor, int nbyt
 // Actualiza el size de file.
 void write_bytes(osFile* file, void* buffer, unsigned int buffer_cursor, int nbytes);
 
-// Incremente el realtive cursor (en 2048) al siguiente data block (en 0).
+// Incrementa el realtive cursor (en 2048) al siguiente data block (en 0).
 void INC_cursor(osFile* file);
 
 // Se ejecuta al hacer el primer os_write con un archivo en modo w.
@@ -37,7 +40,7 @@ void first_write(osFile* file);
 void file_destroy(osFile* file);
 
 
-// Declaración de funciones internas de la API
+/* -------- Declaración de funciones internas de la API --------- */
 
 // Escribe todo el buffer (2048 bytes) en el bloque num.
 void write_block(void* buffer, unsigned int num);
@@ -74,6 +77,7 @@ int is_dir_child(unsigned int dir_block, char* name);
 int is_dir(char* path);
 
 // Guarda en path_array el array de strings con los nombres de cada nivel del path.
+// (Cada string del path queda en el heap asi que hay que usar free_array() al terminar)
 void parse_path(char* path, char** path_array);
 
 // Retorna el largo (depth) del path.
@@ -119,6 +123,9 @@ unsigned long long to_little_endian(unsigned char* buffer, int bytes);
 // Acutaliza el bitmap del block con el valor value (1 o 0)
 void update_bitmap(unsigned int block, int value);
 
+// Va al bitmap y libera el bit del bloque (no puede ser 0)
+void free_block(unsigned int block);
+
 // Retorna el numero de bloque en que esta el bloque de name 
 // (dir o indice), el cual esta dentro de la carpeta de bloque bloque_dir
 unsigned int get_block_in_dir(char* name, unsigned int bloque_dir);
@@ -128,8 +135,7 @@ unsigned int get_block_in_dir(char* name, unsigned int bloque_dir);
 void load_to(char* orig, char* dest);
 
 
-
-// Definicion de Funciones expuestas de la API
+/* -------- Definicion de Funciones expuestas de la API --------- */
 
 void os_mount(char* diskname){
     DISK_NAME = malloc(strlen(diskname) + 1); 
@@ -156,7 +162,6 @@ void os_ls(char* path){
 }
 
 osFile* os_open(char* path, char mode){
-    printf("%d\n", free_space());
     // Revisar si es valido hasta el penultimo nivel
     // if (mode != 'r' && mode != 'w') {printf("Modo debe ser r o w\n"); return NULL;}
     // int isdir = is_dir(path);
@@ -165,7 +170,6 @@ osFile* os_open(char* path, char mode){
     // if (isdir == 1) {printf("Path no es un archivo\n"); return NULL;}
     
     if (mode == 'w') create_file(path);
-    printf("Archivo creado %s\n", path);
     osFile* file = osFile_init(path, mode);
     return file;
 }
@@ -198,7 +202,6 @@ int os_write(osFile* file, void* buffer, int nbytes){
     if (nbytes > free_space() + 2048 - file->relative_cursor) {
         return os_write(file, buffer, free_space() + 2048 - file->relative_cursor);
     }
-    printf("writing %d bytes\n", nbytes);
     unsigned int bytes_written = 0;
     unsigned int buffer_cursor = 0;
     while (nbytes - bytes_written >= 2048)
@@ -228,43 +231,44 @@ void os_close(osFile* file){
     file_destroy(file);
 }
 
-// void os_rm(char* path){
-//     // valid path
-//     // es archivo
-//     unsigned int index_block = get_block(path);
-//     unsigned char buffer[2048];
-//     read_block(buffer, index_block);
-//     if (buffer[0] == 1) {
-//         remove_file(path);
-//     }
-//     else {
-//         buffer[0] --;
-//         write_block(buffer, index_block);
-//     }
-//     remove_entrance(path);
-// }
+void os_rm(char* path){
+    // valid path
+    // es archivo
+    unsigned int index_block = get_block(path);
+    unsigned char buffer[2048];
+    read_block(buffer, index_block);
+    if (buffer[0] == 1) {
+        remove_file(path);
+    }
+    else {
+        buffer[0] --;
+        write_block(buffer, index_block);
+    }
+    remove_entrance(path);
+}
 
 int os_hardlink(char* orig, char* dest){
     // orig y dest son path validos
     // dest no existe
-    // orig es un archivo (o quizas tambien un dir?)
+    // orig es un archivo (o quizas tambien un dir?) -> no, pq los dir no tienen dd guardar el n° de hl
     // Crear entrada para dest (si es que hay espacio en su dir)
     // get block de orig y agregarlo a la entrada de dest
     // aumentar las referencias en el bloque indice de orig
-    int len_path = path_length(dest);
-    char* path_array[len_path];
+    int path_len = path_length(dest);
+    char* path_array[path_len];
     parse_path(dest, path_array);
-    char prev_path[strlen(dest)];
-    char* name = path_array[len_path - 1];
-    get_parent(dest, prev_path);
-    unsigned int dest_block = get_block(orig);
-    create_entrance(prev_path, name, 1, dest_block);
-    free_array(path_array, len_path);
+    char parent[strlen(dest)];
+    get_parent(dest, parent);
+    char* name = path_array[path_len - 1];
+
+    unsigned int orig_block = get_block(orig);
+    create_entrance(parent, name, 1, orig_block);
 
     unsigned char buffer[2048];
-    read_block(buffer, dest_block);
+    read_block(buffer, orig_block);
     buffer[0] ++;
-    write_block(buffer, dest_block);
+    write_block(buffer, orig_block);
+    free_array(path_array, path_len);
     return 0;
 }
 
@@ -273,20 +277,71 @@ int os_mkdir(char* path){
     // existe el path hasta un nivel antes y es dentro de un dir
     // Crear entrada para el dir si hay espacio
     // Y asignarle un bloque libre (00000) para sus entradas
-    int len_path = path_length(path);
-    char* path_array[len_path];
+    int path_len = path_length(path);
+    char* path_array[path_len];
     parse_path(path, path_array);
-    char prev_path[strlen(path)];
-    char* name = path_array[len_path - 1];
+    char parent[strlen(path)];
+    get_parent(path, parent);
+    char* name = path_array[path_len - 1];
     
-    get_parent(path, prev_path);
-    create_entrance(prev_path, name, 2, get_free_block());
-    free_array(path_array, len_path);
+    unsigned int free_block = get_free_block();
+    unsigned char zero_buf[2048] = {0};
+    write_block(zero_buf, free_block); // El bloque de dir tiene q estar en 0 
+    create_entrance(parent, name, 2, free_block);
+    free_array(path_array, path_len);
     return 0;
 }
 
+int empty_dir(char* path){
+    unsigned int dir_block = get_block(path);
+    unsigned char buffer[2048];
+    read_block(buffer, dir_block);
+    for (int i = 0; i < 64; i++) if (buffer[32 * i] & 192) return 0;
+    return 1;
+}
+
+int os_rmdir(char* path, short recursive){
+    // path valido 
+    // path es un dir
+    // si esta vacio eliminarlo
+    // si no y recursive, eliminar todo recursivamente y luego eliminarlo
+    unsigned int dir_block = get_block(path);
+    if (empty_dir(path)) {
+        remove_entrance(path);
+        free_block(dir_block);
+    }
+    else if (recursive) {
+        unsigned char buffer[2048];
+        read_block(buffer, dir_block);
+        for (int i = 0; i < 64; i++)
+        {
+            if (buffer[32 * i] & 192) {
+                char new_path[strlen(path) + strlen((char*)&buffer[32 * i + 3]) + 2];
+                if (!strcmp(path, "/")){
+                    new_path[0] = '/';
+                    strcpy(&new_path[1], (char*)&buffer[32 * i + 3]);
+                }
+                else {
+                    strcpy(new_path, path);
+                    new_path[strlen(path)] = '/';
+                    strcpy(&new_path[strlen(path) + 1], (char*)&buffer[32 * i + 3]);
+                }
+                int _is_dir = is_dir(new_path);
+                if (_is_dir == 1) os_rmdir(new_path, 1);
+                if (_is_dir == 0) os_rm(new_path);
+            }
+        }
+        remove_entrance(path);
+        free_block(dir_block);
+    }
+    return 1;
+}
+
 int os_unload(char* orig, char* dest){
-    // Ver si es archivo o carpeta
+    // Ver si orig existe
+    // Ver si es archivo o carpeta (ambos)
+    // dest tiene q ser un path valido hasta el penultimo nivel (sino mkdir no crea el dir)
+    // dest no puede ser "/"
     int _is_dir = is_dir(orig);
     if (_is_dir == 1){
         // Si es carpeta crear la carpeta en el PC y dps correr os_unload con todo lo que hay dentro
@@ -324,14 +379,10 @@ int os_unload(char* orig, char* dest){
         osFile* source = os_open(orig, 'r');
         FILE* file = fopen(dest, "wb");
         unsigned char buffer[4096];
-        unsigned long long written = 0;
-        printf("Traspasando %s tamaño: %lld\n", orig, source->size);
-        while (source->size > written)
-        {
-            int read = os_read(source, buffer, 4096);
-            fwrite(buffer, read, 1, file);
-            written += read;
-        }
+        printf("Traspasando %s de tamaño: %lld\n", orig, source->size);
+        int read;
+        // Leemos hasta que se acaba el archivo
+        while ((read = os_read(source, buffer, 4096))) fwrite(buffer, read, 1, file);
         fclose(file);
         os_close(source);
     }
@@ -340,6 +391,7 @@ int os_unload(char* orig, char* dest){
 }
 
 int os_load(char* orig){
+    // orig no puede ser "/"
     // Ejecutar load_to(orig, "/" + orig[-1])
     int path_len = path_length(orig);
     char* path_array[path_len];
@@ -353,66 +405,6 @@ int os_load(char* orig){
     free_array(path_array, path_len);
     return 0;
 }
-
-void load_to(char* orig, char* dest){
-    // Revisar si orig es archivo o carpeta
-    printf("Loading %s to %s ...\n", orig, dest);
-    struct stat sb;
-    stat(orig, &sb);
-    if (S_ISDIR(sb.st_mode)) {
-        // Si es carpeta hacer load_to(orig/x, dest/orig/x) de todo lo que hay dentro
-        DIR* parent_dir = opendir(orig);
-        struct dirent* dir;
-        while ((dir = readdir(parent_dir)))
-        {
-            if (!strcmp(dir->d_name, ".") || !strcmp(dir->d_name, "..")) continue;
-            char new_orig[strlen(orig) + strlen(dir->d_name) + 2];
-            strcpy(new_orig, orig);
-            new_orig[strlen(orig)] = '/';
-            strcpy(&new_orig[strlen(orig) + 1], dir->d_name);
-
-            char new_dest[strlen(dest) + strlen(dir->d_name) + 2];
-            if (!strcmp(dest, "/")){
-                new_dest[0] = '/';
-                strcpy(&new_dest[1], dir->d_name);
-            }
-            else {
-                strcpy(new_dest, dest);
-                new_dest[strlen(dest)] = '/';
-                strcpy(&new_dest[strlen(dest) + 1], dir->d_name);
-            }
-            load_to(new_orig, new_dest);                        
-        }
-    }
-    else if (S_ISREG(sb.st_mode)) {
-        // Si es archivo cargarlo al disco
-        printf("Loading %s to %s...\n", orig, dest);
-        FILE* source = fopen(orig, "rb");
-        osFile* file = os_open(dest, 'w');
-        unsigned char buffer[4096];
-        long blocks_read = 0;
-        while (1) // Leemos bloques de 4096 bytes del archivo hasta que no podamos mas
-        {
-            if (!fread(buffer, 4096, 1, source)) break;
-            blocks_read ++;
-            printf("intentamos escribir %d bytes leidos\n", 4096);
-            os_write(file, buffer, 4096);
-        }
-        // Una vez q no queden bloques leemos los bytes < 4096 que queden en la "cola" de source
-        // Hacemos esto por performance para no tener que leer  tantos bloques de 1 byte
-        fseek(source, 4096 * blocks_read, SEEK_SET);
-        int restantes = fread(buffer, 1, 4096, source);
-        printf("intentamos escribir los restantes %d\n", restantes);
-        os_write(file, buffer, restantes);
-        fclose(source);
-        os_close(file);
-    }
-    else
-    {
-        printf("Archivo o carpeta no funca\n");
-    }
-}
-
 
 // Definicion de funciones de osFile
 
@@ -523,6 +515,47 @@ void file_destroy(osFile* file){
     free(file);
 }
 
+void remove_file(char* path){
+    printf("Borrando %s\n", path);
+    osFile* file = osFile_init(path, 'r');
+    unsigned int n_data_blocks = ceil((double)file->size / 2048);
+    unsigned int n_direc_blocks = ceil((double)n_data_blocks / 512);
+    unsigned int n_index_blocks = 1;
+    int aux = n_direc_blocks - 509;
+    while (aux > 0) {
+        n_index_blocks ++; aux -= 511;
+    }
+    unsigned int index_freed = 0, direc_freed = 0, data_freed = 0;
+    unsigned int index_block = file->index_block;
+    unsigned int* direc_blocks = file->direc_blocks;
+    unsigned int* data_blocks = file->data_blocks;
+    for (int index = 0; index < n_index_blocks; index++)
+    {
+        free_block(index_block); index_freed ++;
+        int start = (index == 0)? 2 : 0;
+        for (int direc = start; direc < 511; direc++)
+        {
+            free_block(direc_blocks[direc]); direc_freed ++;
+            for (int data = 0; data < 512; data++)
+            {
+                free_block(data_blocks[data]); data_freed ++;
+                if (data_freed == n_data_blocks) break;
+            }
+            if (direc_freed == n_direc_blocks) break;
+            if (direc < 510) read_pointers_block(data_blocks, direc_blocks[direc + 1]);
+            else
+            {
+                index_block = direc_blocks[511];
+                read_pointers_block(direc_blocks, index_block);
+                read_pointers_block(data_blocks, direc_blocks[0]);
+            }
+        }
+        if (index_freed == n_index_blocks) break;
+    }
+    printf("Se liberaron %lld bytes\n", file->size);
+    os_close(file);
+}
+
 
 // Definicion de funciones internas de la API
 
@@ -604,7 +637,7 @@ void print_bitmap(short hex){
 unsigned int free_space(){
     unsigned char buffer[2048];
     unsigned int free_blocks = 0;
-    for (int i = 1; i < 65; i++)
+    for (unsigned int i = 1; i < 65; i++)
     {
         read_block(buffer, i);
         for (int i = 0; i < 2048; i++){
@@ -647,6 +680,7 @@ void create_file(char* path){
     char* name = path_array[path_len - 1];
     create_entrance(parent, name, 1, block);
     free_array(path_array, path_len);
+    printf("Archivo creado %s\n", path);
 }
 
 void create_entrance(char* parent, char* name, int tipo, unsigned int block){
@@ -712,10 +746,6 @@ unsigned int get_free_block(){
     }
     return 0;
 }
-
-// void update_bitmap(unsigned int block, int value){
-
-// }
 
 void to_big_endian(unsigned char* buffer, unsigned long long num, int bytes){
     for (int i = 0; i < bytes; i++) {
@@ -818,6 +848,103 @@ int is_dir(char* path){
     return -1;
 }
 
-// void remove_file(char* path){
+void free_block(unsigned int block){
+    if (block) update_bitmap(block, 0);
+}
+
+void update_bitmap(unsigned int block, int value){
+    int bitmap_block = block / (2048 * 8) + 1;
+    int byte = (block % (2048 * 8)) / 8;
+    int bit = (block % (2048 * 8)) % 8;
+    unsigned char buffer[2048];
+    read_block(buffer, bitmap_block);
+    if (value == 1) buffer[byte] = buffer[byte] | (0x80 >> bit);
+    else if (value == 0) buffer[byte] = buffer[byte] & ~(buffer[byte] & (0x80 >> bit));
+    write_block(buffer, bitmap_block);
+}
+
+void remove_entrance(char* path){
+    if (!strcmp(path, "/")) return;
+    
+    int path_len = path_length(path);
+    char* path_array[path_len];
+    parse_path(path, path_array);
+    char* name = path_array[path_len - 1];
+    char parent[strlen(path)];
+    get_parent(path, parent);
+
+    unsigned int block_dir = get_block(parent);
+    unsigned char buffer[2048];
+    read_block(buffer, block_dir);
+    for (int i = 0; i < 64; i++)
+    {
+        unsigned char mask = 192;
+        if ((buffer[32 * i] & mask) && !strcmp(name, (char*)&buffer[32 * i + 3] )) {
+            buffer[32 * i] = 0;
+            write_block(buffer, block_dir);
+            break;
+        }
+    }
+    free_array(path_array, path_len);
+}
+
+void load_to(char* orig, char* dest){
+    // Revisar si orig es archivo o carpeta
+    struct stat sb;
+    stat(orig, &sb);
+    if (S_ISDIR(sb.st_mode)) {
+        // Si es carpeta hacer load_to(orig/x, dest/x) de todo lo que hay dentro 
+        // hay que crear dest, ya que se asume que es carpeta nueva
+        os_mkdir(dest);
+        DIR* parent_dir = opendir(orig);
+        struct dirent* dir;
+        while ((dir = readdir(parent_dir)))
+        {
+            if (!strcmp(dir->d_name, ".") || !strcmp(dir->d_name, "..")) continue;
+            char new_orig[strlen(orig) + strlen(dir->d_name) + 2];
+            strcpy(new_orig, orig);
+            new_orig[strlen(orig)] = '/';
+            strcpy(&new_orig[strlen(orig) + 1], dir->d_name);
+
+            char new_dest[strlen(dest) + strlen(dir->d_name) + 2];
+            if (!strcmp(dest, "/")){
+                new_dest[0] = '/';
+                strcpy(&new_dest[1], dir->d_name);
+            }
+            else {
+                strcpy(new_dest, dest);
+                new_dest[strlen(dest)] = '/';
+                strcpy(&new_dest[strlen(dest) + 1], dir->d_name);
+            }
+            load_to(new_orig, new_dest);                        
+        }
+    }
+    else if (S_ISREG(sb.st_mode)) {
+        // Si es archivo cargarlo al disco
+        FILE* source = fopen(orig, "rb");
+        osFile* file = os_open(dest, 'w');
+        unsigned char buffer[4096];
+        long blocks_read = 0;
+        while (1) // Leemos bloques de 4096 bytes del archivo hasta que no podamos mas
+        {
+            if (!fread(buffer, 4096, 1, source)) break;
+            blocks_read ++;
+            os_write(file, buffer, 4096);
+        }
+        // Una vez q no queden bloques leemos los bytes < 4096 que queden en la "cola" de source
+        // Hacemos esto por performance para no tener que leer  tantos bloques de 1 byte
+        fseek(source, 4096 * blocks_read, SEEK_SET);
+        int restantes = fread(buffer, 1, 4096, source);
+        os_write(file, buffer, restantes);
+        fclose(source);
+        os_close(file);
+    }
+    else
+    {
+        printf("Archivo o carpeta no funca\n");
+    }
+}
+
+// int valid_path(char* path){
 
 // }
