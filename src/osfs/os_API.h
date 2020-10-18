@@ -54,7 +54,7 @@ void os_close(osFile* file);
 
 // Elimina la referencia al archivo. Si es la unica referencia elimina 
 // el archivo.
-void os_rm(char* path);
+int os_rm(char* path);
 
 // Crea una nueva referenecia en dest (hardlink) al archivo orig. Aumenta la cantidad de hardlinks de orig.
 int os_hardlink(char* orig, char* dest);

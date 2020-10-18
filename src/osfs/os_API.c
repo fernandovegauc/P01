@@ -66,13 +66,6 @@ void print_bitmap(short hex);
 // Retorna la cantidad de espacio (bytes) libre en el disco (segun bitmap) 
 unsigned int free_space();
 
-// Retorna 0 si name no esta en el directorio de bloque dir,
-// o el bloque en que está name (indice o directorio).
-unsigned int is_child(unsigned int dir_block, char* name);
-
-// Retorna 0 si name (en el dir_block) es un archivo, 1 si es un directorio, -1 si no existe
-int is_dir_child(unsigned int dir_block, char* name);
-
 // Retorna 0 si path es un archivo, 1 si es un directorio, -1 si no existe
 int is_dir(char* path);
 
@@ -82,9 +75,6 @@ void parse_path(char* path, char** path_array);
 
 // Retorna el largo (depth) del path.
 short path_length(char* path);
-
-// Retorna 1 si path es valido (comienza con / y termina sin /, o es /)
-int valid_path(char* path);
 
 // Libera la memoria de cada string del array.
 void free_array(char** array, int path_len);
@@ -134,6 +124,9 @@ unsigned int get_block_in_dir(char* name, unsigned int bloque_dir);
 // con "/" ojala relativos.
 void load_to(char* orig, char* dest);
 
+// Retorna 1 si path es valido, 0 si no (empieza con / y termina sin / o es "/")
+int valid_path(char* path);
+
 
 /* -------- Definicion de Funciones expuestas de la API --------- */
 
@@ -146,28 +139,41 @@ void os_unmount(){
 }
 
 void os_bitmap(unsigned int num, short hex){
+    if (num > 64) {fprintf(stderr, "El numero sale del rango permitido {0, 64}\n"); return;}
     if (num) print_block(num, hex);
     else print_bitmap(hex);
 }
 
 int os_exists(char* path){
+    if (!valid_path(path)) return 0; 
     if (is_dir(path) == -1) return 0;
     return 1;
 }
 
 void os_ls(char* path){
+    if (!valid_path(path) || is_dir(path) != 1) {
+        fprintf(stderr, "path inválido\n");
+        return;
+    }
     unsigned int block = get_block(path);
     printf("Listando: %s\n", path);
     list_dir(block);
 }
 
 osFile* os_open(char* path, char mode){
-    // Revisar si es valido hasta el penultimo nivel
-    // if (mode != 'r' && mode != 'w') {printf("Modo debe ser r o w\n"); return NULL;}
-    // int isdir = is_dir(path);
-    // if (isdir == -1 && mode == 'r') {printf("Archivo no existe\n"); return NULL;}
-    // if (isdir == 0 && mode == 'w') {printf("Archivo ya existe\n"); return NULL;}
-    // if (isdir == 1) {printf("Path no es un archivo\n"); return NULL;}
+    if (!valid_path(path)) {
+        fprintf(stderr, "path inválido\n");
+        return 0;
+    }
+    if (mode != 'r' && mode != 'w') {fprintf(stderr, "Modo debe ser r o w\n"); return NULL;}
+    int isdir = is_dir(path);
+    if (isdir == -1 && mode == 'r') {fprintf(stderr, "Archivo no existe\n"); return NULL;}
+    if (isdir == 0 && mode == 'w') {fprintf(stderr, "Archivo ya existe\n"); return NULL;}
+    if (isdir == 1) {fprintf(stderr, "Path no es un archivo\n"); return NULL;}
+
+    char parent[strlen(path)];
+    get_parent(path, parent);
+    if (mode == 'w' && is_dir(parent) != 1) {fprintf(stderr, "Ruta invalida\n"); return NULL;}
     
     if (mode == 'w') create_file(path);
     osFile* file = osFile_init(path, mode);
@@ -231,9 +237,11 @@ void os_close(osFile* file){
     file_destroy(file);
 }
 
-void os_rm(char* path){
-    // valid path
-    // es archivo
+int os_rm(char* path){
+    if (!valid_path(path) || is_dir(path) != 0) {
+        fprintf(stderr, "path inválido\n");
+        return 0;
+    }
     unsigned int index_block = get_block(path);
     unsigned char buffer[2048];
     read_block(buffer, index_block);
@@ -245,9 +253,14 @@ void os_rm(char* path){
         write_block(buffer, index_block);
     }
     remove_entrance(path);
+    return 0;
 }
 
 int os_hardlink(char* orig, char* dest){
+    if (!valid_path(orig) || is_dir(orig) != 0 || !valid_path(dest) || is_dir(dest) != -1) {
+        fprintf(stderr, "path inválido\n");
+        return 0;
+    }
     // orig y dest son path validos
     // dest no existe
     // orig es un archivo (o quizas tambien un dir?) -> no, pq los dir no tienen dd guardar el n° de hl
@@ -269,10 +282,15 @@ int os_hardlink(char* orig, char* dest){
     buffer[0] ++;
     write_block(buffer, orig_block);
     free_array(path_array, path_len);
+    printf("Hardlink creado\n");
     return 0;
 }
 
 int os_mkdir(char* path){
+    if (!valid_path(path) || is_dir(path) != -1) {
+        fprintf(stderr, "path inválido\n");
+        return 0;
+    }
     // path valido
     // existe el path hasta un nivel antes y es dentro de un dir
     // Crear entrada para el dir si hay espacio
@@ -301,6 +319,10 @@ int empty_dir(char* path){
 }
 
 int os_rmdir(char* path, short recursive){
+    if (!valid_path(path) || is_dir(path) != 1) {
+        fprintf(stderr, "path inválido\n");
+        return 0;
+    }
     // path valido 
     // path es un dir
     // si esta vacio eliminarlo
@@ -338,6 +360,10 @@ int os_rmdir(char* path, short recursive){
 }
 
 int os_unload(char* orig, char* dest){
+    if (!valid_path(orig) || !os_exists(orig)) {
+        fprintf(stderr, "path inválido\n");
+        return 0;
+    }
     // Ver si orig existe
     // Ver si es archivo o carpeta (ambos)
     // dest tiene q ser un path valido hasta el penultimo nivel (sino mkdir no crea el dir)
@@ -391,6 +417,10 @@ int os_unload(char* orig, char* dest){
 }
 
 int os_load(char* orig){
+    if (!os_exists(orig)) {
+        fprintf(stderr, "%s ya existe\n", orig);
+        return 0;
+    }
     // orig no puede ser "/"
     // Ejecutar load_to(orig, "/" + orig[-1])
     int path_len = path_length(orig);
@@ -945,6 +975,9 @@ void load_to(char* orig, char* dest){
     }
 }
 
-// int valid_path(char* path){
-
-// }
+int valid_path(char* path){
+    if (!strcmp(path, "/")) return 1;
+    if (path[0] != '/') return 0;
+    if (path[strlen(path) - 1] == '/') return 0;
+    return 1;
+}
