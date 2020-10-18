@@ -14,12 +14,13 @@ int main(int argc, char const *argv[])
     // os_rmdir("/", 1);
     os_bitmap(1,1);
     os_rmdir("/", 1);
-    // os_load("memes");
-    // osFile* file = os_open("/memes/hola.txt", 'w');
-    // char s[100] = "holaaaaa\n";
-    // os_write(file, s, 5);
-    // os_close(file);
-    // os_unload("/memes/hola.txt", "hola.txt");
+    // os_ls("/");
+    os_load("memes");
+    osFile* file = os_open("/memes/hola.txt", 'w');
+    char s[100] = "holaaaaa\n";
+    os_write(file, s, 100);
+    os_close(file);
+    os_unload("/memes/hola.txt", "hola.txt");
     
 
     os_unmount();

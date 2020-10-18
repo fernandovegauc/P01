@@ -417,10 +417,6 @@ int os_unload(char* orig, char* dest){
 }
 
 int os_load(char* orig){
-    if (!os_exists(orig)) {
-        fprintf(stderr, "%s ya existe\n", orig);
-        return 0;
-    }
     // orig no puede ser "/"
     // Ejecutar load_to(orig, "/" + orig[-1])
     int path_len = path_length(orig);
@@ -431,6 +427,10 @@ int os_load(char* orig){
     char dest[strlen(name) + 2];
     dest[0] = '/';
     strcpy(&dest[1], name);
+    if (os_exists(dest)) {
+        fprintf(stderr, "%s ya existe\n", dest);
+        return 0;
+    }
     load_to(orig, dest);
     free_array(path_array, path_len);
     return 0;
