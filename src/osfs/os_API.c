@@ -311,7 +311,7 @@ int os_mkdir(char* path){
     write_block(zero_buf, free_block); // El bloque de dir tiene q estar en 0 
     create_entrance(parent, name, 2, free_block);
     free_array(path_array, path_len);
-    return 0;
+    return 1;
 }
 
 int os_rmdir(char* path, short recursive){
